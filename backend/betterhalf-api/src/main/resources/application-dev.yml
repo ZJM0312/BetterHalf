@@ -1,0 +1,22 @@
+# Local development profile: no Docker, no Redis, no S3 required.
+#   cd backend && mvn -pl betterhalf-api -am spring-boot:run -Dspring-boot.run.profiles=dev
+spring:
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration
+      - org.springframework.boot.autoconfigure.data.redis.RedisRepositoriesAutoConfiguration
+      - org.springframework.boot.actuate.autoconfigure.data.redis.RedisHealthContributorAutoConfiguration
+      - org.springframework.boot.actuate.autoconfigure.data.redis.RedisReactiveHealthContributorAutoConfiguration
+
+betterhalf:
+  auth:
+    cookie-secure: false
+  rate-limit:
+    enabled: false
+
+management:
+  tracing:
+    enabled: false
+  zipkin:
+    tracing:
+      endpoint: ""

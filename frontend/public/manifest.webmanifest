@@ -1,0 +1,9 @@
+{
+  "name": "BetterHalf · 两个人的小宇宙",
+  "short_name": "BetterHalf",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#fff7f9",
+  "theme_color": "#ff8fa3",
+  "icons": [{ "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml" }]
+}
