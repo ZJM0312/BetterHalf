@@ -32,6 +32,23 @@ npm run dev
 > 前端目前**无需后端即可独立运行**（数据存在浏览器 localStorage）。
 > 换设备时在「设置 → 导出备份」，再在新设备「导入备份」。
 
+### iOS App（原生 SwiftUI）
+
+```bash
+open ios/BetterHalf.xcodeproj
+```
+
+在 Xcode 里选择模拟器或真机，按 ⌘R 运行。要求 Xcode 26+，最低支持 iOS 17。
+
+- 功能与网页版一致：在一起天数、纪念日倒数、回忆时间线（相册选图）、每日一问、帮我选转盘、情侣清单、分享海报（一键存相册 / 系统分享）
+- **iOS 独有**：本地通知提醒（纪念日前一天 20:00 + 当天 9:00、第 N 天里程碑、每晚 21:00 每日一问），触感反馈，深色模式
+- **备份互通**：iOS 与网页版使用同一份 JSON 格式，同一天也会出现同一道“每日一问”
+- 数据保存在 App 沙盒 `Documents/betterhalf.json`，开启了文件加密保护（`completeFileProtection`）
+- 真机运行：在 Xcode → Signing & Capabilities 里选择你的 Team，并把 Bundle ID `com.betterhalf.app` 改成你自己的
+
+> 命令行构建时如果项目在 iCloud 同步的「文稿」目录下，codesign 可能报 `resource fork, Finder information, or similar detritus not allowed`。
+> 用 Xcode 直接运行，或给 `xcodebuild` 加上 `-derivedDataPath ~/Library/Developer/Xcode/DerivedData/BetterHalf` 即可。
+
 ## 增长设计
 
 - **零门槛**：不注册、不绑定，打开即用——先让用户爱上，再谈账号。
@@ -43,6 +60,8 @@ npm run dev
 
 - [ ] **双人实时同步**：接入现有 Spring Boot 后端（auth / couple / invites 模块），邀请码配对，两台手机数据互通
 - [ ] 纪念日提醒推送（Web Push / 小程序订阅消息）
+- [x] iOS 原生 App（SwiftUI）
+- [ ] iOS 桌面小组件：“在一起第 N 天” + 下一个纪念日倒数
 - [ ] 微信小程序版本（国内情侣最主要的入口）
 - [ ] 更多问题卡包（初识期 / 热恋期 / 异地恋 / 婚后）
 - [ ] 年度回忆报告（“我们的 2026”），年底传播节点
@@ -57,6 +76,10 @@ frontend/   Next.js 14 前端（当前产品主体，本地优先）
   src/lib/store.ts          本地数据存储（localStorage + useSyncExternalStore）
   src/lib/content.ts        每日问题、清单灵感、转盘预设
   src/lib/media.ts          图片压缩、分享海报生成
+ios/        SwiftUI 原生 App（iOS 17+）
+  BetterHalf/Model/         数据模型（与网页版同格式）、存储、日期计算、问题库
+  BetterHalf/Views/         各功能页面、分享海报
+  BetterHalf/Support/       主题样式、本地通知提醒
 backend/    Spring Boot 模块化单体（为双人同步准备，详见下方）
 ```
 
