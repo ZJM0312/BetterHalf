@@ -1,31 +1,114 @@
+import CloudKit
 import SwiftUI
+import UserNotifications
 
 @main
 struct BetterHalfApp: App {
-    @State private var store = SpaceStore()
+    @UIApplicationDelegateAdaptor(AppDelegate.self) private var app
     @State private var lock = AppLock()
-    @State private var sync = SyncService()
     @State private var ai = AISettings()
-    @State private var router = AppRouter()
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some Scene {
         WindowGroup {
             RootView()
-                .environment(store)
+                .environment(app.store)
                 .environment(lock)
-                .environment(sync)
+                .environment(app.sync)
+                .environment(app.cloud)
                 .environment(ai)
-                .environment(router)
+                .environment(app.router)
                 .tint(Theme.pink)
-                .onAppear { sync.store = store }
+                .task {
+                    // While the app is open, check iCloud now and then as a backup for missed pushes.
+                    while !Task.isCancelled {
+                        try? await Task.sleep(for: .seconds(45))
+                        if scenePhase == .active { await app.cloud.fetch() }
+                    }
+                }
         }
         .onChange(of: scenePhase) { _, phase in
             switch phase {
             case .background: lock.lockIfNeeded()
-            case .active: store.reloadFromDisk() // widgets may have fed / petted the pet
+            case .active:
+                app.store.reloadFromDisk() // widgets may have fed / petted the pet
+                Task { await app.cloud.refresh() }
             default: break
             }
+        }
+    }
+}
+
+/// Owns the long-lived models so push notifications and share invites can reach them
+/// even when they arrive before any SwiftUI view exists.
+final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
+    private(set) static weak var shared: AppDelegate?
+    let store = SpaceStore()
+    let sync = SyncService()
+    let cloud = CloudSync()
+    let router = AppRouter()
+
+    func application(_ application: UIApplication,
+                     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
+        Self.shared = self
+        if let s = store.state { ChestLedger.migrateIfNeeded(s) }
+        UNUserNotificationCenter.current().delegate = self
+        sync.store = store
+        cloud.store = store
+        store.onChange = { [weak self] in self?.cloud.schedulePush() }
+        store.onPartnerEvents = { [weak self] events in
+            guard let self, let s = self.store.state else { return }
+            PartnerNotifier.post(events, state: s)
+        }
+        if CloudSync.isEnabled {
+            application.registerForRemoteNotifications()
+            cloud.start()
+        }
+        return true
+    }
+
+    func application(_ application: UIApplication, configurationForConnecting connectingSceneSession: UISceneSession,
+                     options: UIScene.ConnectionOptions) -> UISceneConfiguration {
+        let config = UISceneConfiguration(name: nil, sessionRole: connectingSceneSession.role)
+        config.delegateClass = SceneDelegate.self
+        return config
+    }
+
+    /// Silent push from the CloudKit subscription: the partner changed something.
+    func application(_ application: UIApplication, didReceiveRemoteNotification userInfo: [AnyHashable: Any],
+                     fetchCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void) {
+        Task { @MainActor in completionHandler(await cloud.fetch() ? .newData : .noData) }
+    }
+
+    func application(_ application: UIApplication, didFailToRegisterForRemoteNotificationsWithError error: Error) {}
+
+    // Show partner notifications as banners even while the app is open.
+    func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification)
+        async -> UNNotificationPresentationOptions {
+        [.banner, .sound, .list]
+    }
+
+    func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
+        if let raw = response.notification.request.content.userInfo["tab"] as? String, let tab = AppTab(rawValue: raw) {
+            await MainActor.run { router.tab = tab }
+        }
+    }
+}
+
+/// Receives iCloud share invites (the partner tapped the link) on warm and cold launch.
+final class SceneDelegate: NSObject, UIWindowSceneDelegate {
+    func scene(_ scene: UIScene, willConnectTo session: UISceneSession, options connectionOptions: UIScene.ConnectionOptions) {
+        if let metadata = connectionOptions.cloudKitShareMetadata { accept(metadata) }
+    }
+
+    func windowScene(_ windowScene: UIWindowScene, userDidAcceptCloudKitShareWith cloudKitShareMetadata: CKShare.Metadata) {
+        accept(cloudKitShareMetadata)
+    }
+
+    private func accept(_ metadata: CKShare.Metadata) {
+        Task { @MainActor in
+            await AppDelegate.shared?.cloud.accept(metadata)
+            AppDelegate.shared?.router.showCloudJoined = true
         }
     }
 }
@@ -60,6 +143,8 @@ enum AppTab: String, Hashable { case home, memories, pet, talk, play }
 @Observable
 final class AppRouter {
     var tab: AppTab = .home
+    /// Set after accepting the partner's iCloud invite, to show a welcome.
+    var showCloudJoined = false
 }
 
 struct MainTabView: View {

@@ -17,6 +17,7 @@ struct PetEditorSheet: View {
     @State private var style: PetArtStyle = .sticker
 
     @State private var pickerItem: PhotosPickerItem?
+    @AppStorage(PhotoAccess.pickerKey) private var photoPickerOn = true
     @State private var newImage: UIImage?      // chosen this session (nil = keep current)
     @State private var currentImage: UIImage?  // existing pet image when editing
     @State private var rawPhoto: UIImage?
@@ -47,10 +48,12 @@ struct PetEditorSheet: View {
                         }
                         .frame(height: 220)
                         HStack(spacing: 10) {
-                            PhotosPicker(selection: $pickerItem, matching: .images) {
-                                Label("上传照片", systemImage: "photo").frame(maxWidth: .infinity)
+                            if photoPickerOn {
+                                PhotosPicker(selection: $pickerItem, matching: .images) {
+                                    Label("上传照片", systemImage: "photo").frame(maxWidth: .infinity)
+                                }
+                                .buttonStyle(.bordered)
                             }
-                            .buttonStyle(.bordered)
                             Button { withAnimation { showGenerator.toggle() } } label: {
                                 Label("AI 生成", systemImage: "sparkles").frame(maxWidth: .infinity)
                             }

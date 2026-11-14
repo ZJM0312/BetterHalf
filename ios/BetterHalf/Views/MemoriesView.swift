@@ -15,6 +15,9 @@ struct MemoriesView: View {
     @State private var newAssets: [PHAsset] = []
     @State private var toDelete: Moment?
     @State private var editing: Moment?
+    @AppStorage(PhotoAccess.pickerKey) private var photoPickerOn = true
+    @State private var noteFor: Moment?
+    @State private var noteText = ""
     @FocusState private var focused: Bool
 
     var body: some View {
@@ -46,6 +49,13 @@ struct MemoriesView: View {
                 .onAppear(perform: refreshNewAssets)
                 .onChange(of: scenePhase) { _, p in if p == .active { refreshNewAssets() } }
                 .sheet(item: $editing) { m in EditMomentSheet(moment: m) }
+                .alert("补充一句", isPresented: Binding(get: { noteFor != nil }, set: { if !$0 { noteFor = nil } })) {
+                    TextField("那天我还记得…", text: $noteText)
+                    Button("添加") { addNote() }
+                    Button("取消", role: .cancel) {}
+                } message: {
+                    Text("你和 TA 的补充会分别保留，同时写也不会互相覆盖")
+                }
                 .confirmationDialog("删除这条回忆？", isPresented: Binding(get: { toDelete != nil }, set: { if !$0 { toDelete = nil } }),
                                     titleVisibility: .visible) {
                     Button("删除", role: .destructive) { if let m = toDelete { store.deleteMoment(m) } }
@@ -102,11 +112,13 @@ struct MemoriesView: View {
                 .pickerStyle(.segmented)
             }
             HStack(spacing: 8) {
-                PhotosPicker(selection: $pickerItems, maxSelectionCount: max(1, 9 - pending.count),
-                             matching: .any(of: [.images, .videos])) {
-                    toolLabel("photo.on.rectangle", "照片/视频")
+                if photoPickerOn {
+                    PhotosPicker(selection: $pickerItems, maxSelectionCount: max(1, 9 - pending.count),
+                                 matching: .any(of: [.images, .videos])) {
+                        toolLabel("photo.on.rectangle", "照片/视频")
+                    }
+                    .disabled(pending.count >= 9)
                 }
-                .disabled(pending.count >= 9)
                 Button {
                     if recorder.isRecording {
                         if let p = recorder.stop() { pending.append(p) }
@@ -193,6 +205,7 @@ struct MemoriesView: View {
                                 Text(m.date); Text(m.by == .me ? s.me : s.partner)
                                 Spacer()
                                 Menu {
+                                    Button("补充一句", systemImage: "text.bubble") { noteText = ""; noteFor = m }
                                     Button("编辑文字", systemImage: "pencil") { editing = m }
                                     Button("删除", systemImage: "trash", role: .destructive) { toDelete = m }
                                 } label: { Image(systemName: "ellipsis").padding(6) }
@@ -204,6 +217,28 @@ struct MemoriesView: View {
                                 Image(uiImage: img).resizable().scaledToFit().clipShape(RoundedRectangle(cornerRadius: 12))
                             }
                             if let media = m.media, !media.isEmpty { MediaGrid(items: media) }
+                            if let notes = m.notes, !notes.isEmpty {
+                                VStack(alignment: .leading, spacing: 6) {
+                                    ForEach(notes) { n in
+                                        (Text("\(n.by == .me ? s.me : s.partner)：").bold() + Text(n.text))
+                                            .font(.subheadline)
+                                    }
+                                }
+                                .padding(10)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(Theme.bg, in: RoundedRectangle(cornerRadius: 10))
+                            }
+                            HStack {
+                                if let who = m.editedBy, m.updatedAt != nil, who != s.me || (m.updatedAt ?? 0) > Date().timeIntervalSince1970 - 86400 {
+                                    Text("\(who) 编辑于 \(Date(timeIntervalSince1970: m.updatedAt!).formatted(.relative(presentation: .named)))")
+                                        .font(.caption2).foregroundStyle(.tertiary)
+                                }
+                                Spacer()
+                                Button { noteText = ""; noteFor = m } label: {
+                                    Label("补充一句", systemImage: "text.bubble").font(.caption)
+                                }
+                                .buttonStyle(.borderless)
+                            }
                         }
                         .card()
                     }
@@ -230,6 +265,16 @@ struct MemoriesView: View {
         let moment = Moment(date: DateKit.key(date), text: t, mood: mood, by: by, media: items.isEmpty ? nil : items)
         store.update { $0.moments.insert(moment, at: 0) }
         text = ""; pending = []; focused = false
+    }
+
+    private func addNote() {
+        let t = String(noteText.trimmingCharacters(in: .whitespacesAndNewlines).prefix(200))
+        guard let m = noteFor, !t.isEmpty else { return }
+        store.update { s in
+            guard let i = s.moments.firstIndex(where: { $0.id == m.id }) else { return }
+            s.moments[i].notes = (s.moments[i].notes ?? []) + [MomentNote(by: .me, text: t)]
+        }
+        noteFor = nil
     }
 
     private func refreshNewAssets() {

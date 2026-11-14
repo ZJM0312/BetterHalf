@@ -36,11 +36,13 @@ enum AIClient {
         switch AIChatFormat(rawValue: endpoint.format) ?? .openAI {
         case .openAI:
             var req = try request(base + "/chat/completions", key: key.isEmpty ? nil : ("Authorization", "Bearer \(key)"))
-            let body: [String: Any] = [
+            var body: [String: Any] = [
                 "model": endpoint.model,
                 "messages": [["role": "system", "content": system]] + turns,
-                "max_tokens": 600,
             ]
+            // OpenAI's newer models only accept max_completion_tokens; everyone else uses max_tokens.
+            body[endpoint.host == "api.openai.com" ? "max_completion_tokens" : "max_tokens"] = 600
+            body.merge(try endpoint.extraParams()) { $1 }
             req.httpBody = try JSONSerialization.data(withJSONObject: body)
             let json = try await send(req)
             guard let choices = json["choices"] as? [[String: Any]],
@@ -65,6 +67,7 @@ enum AIClient {
                 req.setValue("server-side-fallback-2026-07-01", forHTTPHeaderField: "anthropic-beta")
                 body["fallbacks"] = "default"
             }
+            body.merge(try endpoint.extraParams()) { $1 }
             req.httpBody = try JSONSerialization.data(withJSONObject: body)
             let json = try await send(req)
             if json["stop_reason"] as? String == "refusal" { throw AIError.refused }
@@ -79,31 +82,58 @@ enum AIClient {
 
     static func image(prompt: String, endpoint: AIEndpoint, key: String) async throws -> UIImage {
         let base = endpoint.baseURL.trimmingCharacters(in: .whitespaces).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        var req = try request(base + "/images/generations", key: key.isEmpty ? nil : ("Authorization", "Bearer \(key)"))
+        let format = AIImageFormat(rawValue: endpoint.format) ?? .openAI
+        let path = format == .minimax ? "/image_generation" : "/images/generations"
+        var req = try request(base + path, key: key.isEmpty ? nil : ("Authorization", "Bearer \(key)"))
         req.timeoutInterval = 180
-        let body: [String: Any]
-        switch AIImageFormat(rawValue: endpoint.format) ?? .openAI {
-        case .openAI: body = ["model": endpoint.model, "prompt": prompt, "size": "1024x1024", "n": 1]
-        case .siliconFlow: body = ["model": endpoint.model, "prompt": prompt, "image_size": "1024x1024", "batch_size": 1]
+        let size = (endpoint.size ?? "").trimmingCharacters(in: .whitespaces)
+        var body: [String: Any] = ["model": endpoint.model, "prompt": prompt]
+        switch format {
+        case .openAI:
+            body["n"] = 1
+            body["size"] = size.isEmpty ? "1024x1024" : size
+        case .minimal:
+            if !size.isEmpty { body["size"] = size }
+        case .siliconFlow:
+            body["image_size"] = size.isEmpty ? "1024x1024" : size
+            body["batch_size"] = 1
+        case .ark:
+            body["size"] = size.isEmpty ? "2048x2048" : size
+            body["watermark"] = false
+            body["response_format"] = "url"
+        case .minimax:
+            body["aspect_ratio"] = "1:1"
+            body["response_format"] = "base64"
+            body["n"] = 1
         }
+        body.merge(try endpoint.extraParams()) { $1 }
         req.httpBody = try JSONSerialization.data(withJSONObject: body)
         let json = try await send(req)
-        // Accept the common response shapes: data[].b64_json | data[].url | images[].url
+
+        // MiniMax: {"data": {"image_base64": [...]} } or {"data": {"image_urls": [...]}}
+        if let d = json["data"] as? [String: Any] {
+            if let b64 = (d["image_base64"] as? [String])?.first, let data = Data(base64Encoded: b64), let img = UIImage(data: data) { return img }
+            if let s = (d["image_urls"] as? [String])?.first, let img = try await download(s) { return img }
+        }
+        // Everyone else: data[].b64_json | data[].url | images[].url
         let items = (json["data"] as? [[String: Any]]) ?? (json["images"] as? [[String: Any]]) ?? []
         if let b64 = items.first?["b64_json"] as? String, let data = Data(base64Encoded: b64), let img = UIImage(data: data) {
             return img
         }
-        if let s = items.first?["url"] as? String, let url = URL(string: s) {
-            let (data, _) = try await URLSession.shared.data(from: url)
-            if let img = UIImage(data: data) { return img }
-        }
+        if let s = items.first?["url"] as? String, let img = try await download(s) { return img }
         throw AIError.badResponse
+    }
+
+    private static func download(_ s: String) async throws -> UIImage? {
+        guard let url = URL(string: s) else { return nil }
+        let (data, _) = try await URLSession.shared.data(from: url)
+        return UIImage(data: data)
     }
 
     // MARK: helpers
 
     private static func request(_ urlString: String, key: (String, String)?) throws -> URLRequest {
-        guard let url = URL(string: urlString), url.scheme == "https" || url.host == "localhost" || url.host?.hasPrefix("192.168.") == true || url.host == "127.0.0.1" else {
+        guard let url = URL(string: urlString), url.scheme == "https" || isLocal(url.host ?? "") else {
             throw AIError.http(0, "接口地址需要以 https:// 开头")
         }
         var req = URLRequest(url: url, timeoutInterval: 60)
@@ -111,6 +141,12 @@ enum AIClient {
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         if let key { req.setValue(key.1, forHTTPHeaderField: key.0) }
         return req
+    }
+
+    /// Plain http is only allowed for servers on the user's own network (Ollama etc.).
+    private static func isLocal(_ host: String) -> Bool {
+        host == "localhost" || host == "127.0.0.1" || host.hasSuffix(".local") || host.hasPrefix("192.168.") || host.hasPrefix("10.")
+            || (host.hasPrefix("172.") && (16...31).contains(Int(host.split(separator: ".").dropFirst().first ?? "") ?? 0))
     }
 
     private static func send(_ req: URLRequest) async throws -> [String: Any] {

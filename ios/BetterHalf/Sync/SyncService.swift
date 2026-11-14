@@ -4,6 +4,8 @@ import UIKit
 
 /// Peer-to-peer sync between the two partners' phones over Wi-Fi / Bluetooth (MultipeerConnectivity).
 /// Data is end-to-end encrypted by the session and never touches a server.
+/// Only in-app data crosses (see `PrivacyGuard`): the protocol has exactly three messages —
+/// our app data, a request for media our data references, and a 想你了 nudge.
 @Observable
 final class SyncService: NSObject {
     static let serviceType = "betterhalf"
@@ -129,9 +131,12 @@ final class SyncService: NSObject {
             }
             if !missing.isEmpty { send(.request(files: missing), to: [peer]) }
         case let .request(files):
-            guard let session else { return }
-            for name in files where !name.contains("/") && SharedContainer.hasMedia(name) {
-                session.sendResource(at: SharedContainer.mediaURL(name), withName: name, toPeer: peer, withCompletionHandler: nil)
+            // Only serve media that our own data references — never an arbitrary file the other side names.
+            DispatchQueue.main.async {
+                guard let session = self.session, let allowed = self.store?.state.map({ Set($0.referencedFiles) }) else { return }
+                for name in Set(files).intersection(allowed) where SharedContainer.hasMedia(name) {
+                    session.sendResource(at: SharedContainer.mediaURL(name), withName: name, toPeer: peer, withCompletionHandler: nil)
+                }
             }
         case let .nudge(from):
             DispatchQueue.main.async {
@@ -165,7 +170,10 @@ extension SyncService: MCSessionDelegate {
 
     func session(_ session: MCSession, didFinishReceivingResourceWithName resourceName: String, fromPeer peerID: MCPeerID,
                  at localURL: URL?, withError error: Error?) {
-        guard error == nil, let localURL, !resourceName.contains("/") else { return }
+        guard error == nil, let localURL, PrivacyGuard.isSafeMediaName(resourceName) else {
+            if let localURL { try? FileManager.default.removeItem(at: localURL) }
+            return
+        }
         let dst = SharedContainer.mediaURL(resourceName)
         try? FileManager.default.removeItem(at: dst)
         try? FileManager.default.moveItem(at: localURL, to: dst)

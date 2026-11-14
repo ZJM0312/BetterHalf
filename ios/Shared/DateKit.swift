@@ -15,6 +15,18 @@ enum DateKit {
     static func key(_ d: Date = Date()) -> String { formatter.string(from: d) }
     static func date(_ key: String) -> Date { formatter.date(from: key) ?? calendar.startOfDay(for: Date()) }
 
+    /// "今天" / "昨天" / "前天" / "11月12日".
+    static func friendly(_ key: String) -> String {
+        switch daysBetween(key, Self.key()) {
+        case 0: return "今天"
+        case 1: return "昨天"
+        case 2: return "前天"
+        default:
+            let c = calendar.dateComponents([.month, .day], from: date(key))
+            return "\(c.month ?? 0)月\(c.day ?? 0)日"
+        }
+    }
+
     static func daysBetween(_ a: String, _ b: String) -> Int {
         calendar.dateComponents([.day], from: date(a), to: date(b)).day ?? 0
     }

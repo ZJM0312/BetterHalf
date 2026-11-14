@@ -27,11 +27,11 @@ struct AISettingsView: View {
                     row(title: "生图模型", icon: "paintpalette", endpoint: ai.image, ready: ai.imageReady, presets: AIPresets.image)
                 }
             } footer: {
-                Text("对话推荐 DeepSeek（便宜、中文好）。DeepSeek 暂不提供生图接口，生图可以选 OpenAI 或硅基流动。没填也没关系，宠物会用内置的「小脑袋」陪你聊天。")
+                Text("对话预设了 DeepSeek、豆包 Seed、通义千问、Kimi、智谱、OpenAI、Claude、Gemini 等 20 家，生图预设了 Seedream、硅基流动、CogView、OpenAI、Imagen 等 8 家，也可以填任何兼容接口。DeepSeek 和 Claude 没有生图接口，生图请另选一家。没填也没关系，宠物会用内置的「小脑袋」陪你聊天。")
             }
 
             Section("隐私") {
-                Label("API Key 只保存在这台 iPhone 的钥匙串里，不会同步、不会进备份", systemImage: "lock.shield")
+                Label("API Key 只保存在这台 iPhone 的钥匙串里，不会同步、不会进备份；每个服务商的 Key 分开保存", systemImage: "lock.shield")
                 Label("和宠物的聊天只会发给你选择的服务商，第一次使用前会再问你", systemImage: "hand.raised")
                 Label("聊天记录只保存在本机", systemImage: "iphone")
             }
@@ -67,6 +67,8 @@ private struct AIEndpointEditor: View {
     @State private var baseURL = ""
     @State private var model = ""
     @State private var key = ""
+    @State private var size = ""
+    @State private var extra = ""
     @State private var revealKey = false
     @State private var testing = false
     @State private var testResult: (ok: Bool, text: String)?
@@ -77,6 +79,8 @@ private struct AIEndpointEditor: View {
         var e = AIEndpoint(preset: preset ?? presets[0])
         e.baseURL = baseURL.trimmingCharacters(in: .whitespaces)
         e.model = model.trimmingCharacters(in: .whitespaces)
+        e.size = kind == .image ? size.trimmingCharacters(in: .whitespaces) : nil
+        e.extra = extra.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : extra
         return e
     }
 
@@ -84,12 +88,23 @@ private struct AIEndpointEditor: View {
         Form {
             Section("服务商") {
                 Picker("服务商", selection: $presetID) {
-                    ForEach(presets) { Text($0.name).tag($0.id) }
+                    ForEach(AIPresets.grouped(presets), id: \.0) { group, items in
+                        Section(group) {
+                            ForEach(items) { Text($0.name).tag($0.id) }
+                        }
+                    }
                 }
                 .pickerStyle(.navigationLink)
                 .onChange(of: presetID) { old, new in
                     guard loaded, old != new, let p = presets.first(where: { $0.id == new }) else { return }
-                    baseURL = p.baseURL; model = p.model; testResult = nil
+                    // Restore what was saved for this provider, else its defaults; its own key, never the previous one.
+                    let saved = (kind == .chat ? ai.chat : ai.image).flatMap { $0.presetID == new ? $0 : nil }
+                    baseURL = saved?.baseURL ?? p.baseURL
+                    model = saved?.model ?? p.model
+                    size = saved?.size ?? p.size ?? ""
+                    extra = saved?.extra ?? ""
+                    key = ai.key(kind, presetID: new)
+                    testResult = nil
                 }
             }
 
@@ -101,6 +116,12 @@ private struct AIEndpointEditor: View {
                 LabeledContent("模型") {
                     TextField("模型名", text: $model).multilineTextAlignment(.trailing)
                         .textInputAutocapitalization(.never).autocorrectionDisabled()
+                }
+                if kind == .image && preset.map({ AIImageFormat(rawValue: $0.format) != .minimax }) ?? true {
+                    LabeledContent("图片尺寸") {
+                        TextField("默认", text: $size).multilineTextAlignment(.trailing)
+                            .textInputAutocapitalization(.never).autocorrectionDisabled()
+                    }
                 }
                 HStack {
                     Text("API Key")
@@ -115,6 +136,17 @@ private struct AIEndpointEditor: View {
                 }
             } footer: {
                 Text(preset?.keyHint ?? "")
+            }
+
+            Section {
+                DisclosureGroup("高级：附加参数") {
+                    TextField(#"{"temperature": 0.8}"#, text: $extra, axis: .vertical)
+                        .font(.footnote.monospaced())
+                        .lineLimit(2...6)
+                        .textInputAutocapitalization(.never).autocorrectionDisabled()
+                }
+            } footer: {
+                Text("可选。填一个 JSON 对象，会合并进请求体，用来传服务商特有的参数。不懂可以不填。")
             }
 
             Section {
@@ -156,10 +188,12 @@ private struct AIEndpointEditor: View {
             guard !loaded else { return }
             if let e = kind == .chat ? ai.chat : ai.image {
                 presetID = e.presetID; baseURL = e.baseURL; model = e.model
+                size = e.size ?? ""; extra = e.extra ?? ""
             } else {
                 presetID = presets[0].id; baseURL = presets[0].baseURL; model = presets[0].model
+                size = presets[0].size ?? ""
             }
-            key = ai.key(kind)
+            key = ai.key(kind, presetID: presetID)
             DispatchQueue.main.async { loaded = true }
         }
     }

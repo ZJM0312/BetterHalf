@@ -54,8 +54,14 @@ BetterHalf 是只属于你们两个人的小宇宙。
 · 「今天吃什么」「周末去哪」转盘，告别「都行」
 · 一起列下想做的 100 件事，一件件打勾
 
-【两部手机点对点同步】
-· 两部手机靠近即可同步，数据直接加密传输，不经过任何服务器
+【两个人，各用各的手机】
+· 异地同步：通过你们自己的 iCloud 私密共享，TA 回答了今日一问、记录了回忆、让宠物带话，你马上收到通知
+· 面对面同步：两部手机靠近即可同步，不需要网络，不经过任何服务器
+· 两人同时编辑也不怕：各自的补充互不覆盖
+
+【每日一问 · 开宝箱】
+· 两人各答各的，都答完才能一起开宝箱，看看 TA 写了什么
+· 没开的宝箱、TA 答了你还没答的题，都会提醒你补上
 · 随时给 TA 发一个「想你了」
 
 【隐私】
@@ -74,7 +80,7 @@ BetterHalf 是只属于你们两个人的小宇宙。
 ## App 隐私（App Store Connect → App 隐私）
 
 - 「你或你的第三方合作伙伴是否会从此 App 收集数据？」→ **否，不收集数据**。
-  - 理由：开发者没有服务器，也没有第三方 SDK；所有数据保存在本机。
+  - 理由：开发者没有服务器，也没有第三方 SDK；数据保存在本机，开启异地同步时保存在用户自己的 iCloud（开发者无法访问，按 Apple 规则不算"收集"）。
   - AI 功能是用户自行填写自己的第三方账号密钥，数据由用户的设备直接发送给用户选择的服务商，开发者及其合作伙伴无法访问。⚠️ 这一点属于判断题，如果你不放心，可以保守地申报「用户内容 → 其他用户内容（不用于追踪、不与身份关联）」。
 - 隐私清单（PrivacyInfo.xcprivacy）已包含在 App 和小组件里。
 
@@ -93,7 +99,8 @@ How to test key features:
 • Memories (回忆): add text/photos/videos/voice notes.
 • Pets (宠物): tap + to add a pet from a photo (the background is removed on-device with Vision). Feed/pet/play buttons animate the pet. "和 TA 聊天" opens a chat that replies offline with built-in responses.
 • Widgets: add the "我们的天数" and "我们的宠物" widgets from the Home Screen widget gallery.
-• Sync (设置 → 和 TA 的手机同步): syncs data directly between two nearby iPhones over MultipeerConnectivity. It needs two devices, so it may not be testable in review; no server is involved.
+• Long-distance sync (设置 → 异地同步): uses CloudKit sharing. One partner invites the other through the system iCloud share sheet; data lives in the inviter's private iCloud database and is shared only with the invited Apple ID. Silent CloudKit pushes wake the app so it can post a local notification when the partner answers a question or adds a memory. Requires two Apple IDs to test end-to-end.
+• Nearby sync (设置 → 面对面同步): syncs data directly between two nearby iPhones over MultipeerConnectivity. It needs two devices, so it may not be testable in review; no server is involved.
 
 Optional AI features: the app ships with no AI service and no API keys. Users may enter their own API key for a provider of their choice (DeepSeek, OpenAI, Anthropic, etc.) in Settings → AI 设置. Before any data is sent to a provider for the first time, the app shows a consent alert naming the provider. Without a key, all features work offline.
 

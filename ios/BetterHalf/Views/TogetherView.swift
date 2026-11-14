@@ -171,8 +171,13 @@ extension TogetherView {
         var out: [TodayItem] = []
         let today = DateKit.key()
         let ans = s.answers[today] ?? Answer()
-        if ans.bothAnswered {
-            out.append(TodayItem(emoji: "✅", text: "今日一问你们都答完啦，去看看彼此的回答", tab: .talk))
+        let chests = ChestLedger.unopened(s)
+        if !chests.isEmpty {
+            out.append(TodayItem(emoji: "🎁", text: chests.count == 1 && chests[0] == today ? "今日一问你们都答完啦，去开宝箱" : "有 \(chests.count) 个宝箱等你打开", tab: .talk))
+        } else if ans.bothAnswered {
+            out.append(TodayItem(emoji: "✅", text: "今日一问你们都答完啦", tab: .talk))
+        } else if ans.me == nil, ans.partner != nil {
+            out.append(TodayItem(emoji: "🎁", text: "\(s.partner) 已经答了今日一问，你答完就能开宝箱", tab: .talk))
         } else if ans.me != nil {
             out.append(TodayItem(emoji: "💬", text: "你答完了，等 \(s.partner) 回答今日一问", tab: .talk))
         } else {

@@ -93,6 +93,7 @@ struct PetWidgetView: View {
             case .accessoryCircular: circular(pet)
             case .accessoryRectangular: rectangular(pet)
             case .systemMedium: medium(pet)
+            case .systemLarge: large(pet)
             default: small(pet)
             }
         } else {
@@ -122,13 +123,18 @@ struct PetWidgetView: View {
             .saturation(mood == .sleeping ? 0.6 : 1)
             Text(mood.emoji).font(.system(size: size * 0.22)).offset(x: 6, y: -4)
         }
+        .overlay(alignment: .top) {
+            if let a = pet.accessory { Text(a).font(.system(size: size * 0.3)).offset(y: (mood == .sleeping ? 0 : poseOffset) - size * 0.08) }
+        }
         .transition(.push(from: .bottom))
         .id("\(entry.pose)-\(mood)")
     }
 
     private func bubble(_ pet: Pet) -> String {
-        pet.recentReaction(at: entry.date) ?? pet.mood(at: entry.date).label
+        pet.recentReaction(at: entry.date) ?? (pet.noteFor(me: entry.me, at: entry.date) != nil ? "💌 有话带给你" : pet.mood(at: entry.date).label)
     }
+
+    private func speech(_ pet: Pet) -> String { pet.speech(me: entry.me, partner: entry.partner, at: entry.date) }
 
     private func actionButton(_ pet: Pet, _ action: PetAction, compact: Bool) -> some View {
         Button(intent: PetActionIntent(petID: pet.id, action: action)) {
@@ -169,13 +175,39 @@ struct PetWidgetView: View {
                     Text("Lv.\(pet.level)").font(.caption2.bold()).foregroundStyle(.white)
                         .padding(.horizontal, 6).padding(.vertical, 2).background(Theme.pink, in: Capsule())
                 }
-                Text(pet.recentReaction(at: entry.date) ?? pet.mood(at: entry.date).line(pet: pet.name, me: entry.me, partner: entry.partner))
-                    .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                Text(speech(pet))
+                    .font(.caption).foregroundStyle(pet.noteFor(me: entry.me, at: entry.date) != nil ? Theme.pink : .secondary).lineLimit(2)
                 bar("🍖", pet.fullness(at: entry.date), .orange)
                 bar("💗", pet.happiness(at: entry.date), Theme.pink)
                 HStack(spacing: 6) {
                     ForEach(PetAction.allCases, id: \.self) { actionButton(pet, $0, compact: false) }
                 }
+            }
+        }
+    }
+
+    private func large(_ pet: Pet) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("\(pet.species) \(pet.name)").font(.headline).lineLimit(1)
+                Text("Lv.\(pet.level) \(pet.levelTitle)").font(.caption2.bold()).foregroundStyle(.white)
+                    .padding(.horizontal, 6).padding(.vertical, 2).background(Theme.pink, in: Capsule())
+                Spacer()
+                if pet.careStreak(entry.date) > 1 { Text("🔥\(pet.careStreak(entry.date))天").font(.caption.bold()).foregroundStyle(.orange) }
+            }
+            Text(speech(pet))
+                .font(.subheadline)
+                .lineLimit(2)
+                .padding(.horizontal, 12).padding(.vertical, 8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Theme.card.opacity(0.8), in: RoundedRectangle(cornerRadius: 14))
+            sprite(pet, size: 150).frame(maxWidth: .infinity, maxHeight: .infinity)
+            bar("🍖", pet.fullness(at: entry.date), .orange)
+            bar("💗", pet.happiness(at: entry.date), Theme.pink)
+            Text("🌟 \(pet.wishClaimedToday(entry.date) ? "今天的心愿完成啦" : pet.wish(entry.date).text)")
+                .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            HStack(spacing: 6) {
+                ForEach(PetAction.allCases, id: \.self) { actionButton(pet, $0, compact: false) }
             }
         }
     }
@@ -207,7 +239,11 @@ struct PetWidgetView: View {
             }
             VStack(alignment: .leading, spacing: 2) {
                 Text("\(pet.name) · \(bubble(pet))").font(.caption.bold()).lineLimit(1)
-                Gauge(value: pet.fullness(at: entry.date)) { Text("🍖") }.gaugeStyle(.accessoryLinearCapacity)
+                if let n = pet.noteFor(me: entry.me, at: entry.date) {
+                    Text("\(n.from)：\(n.text)").font(.caption2).lineLimit(2)
+                } else {
+                    Gauge(value: pet.fullness(at: entry.date)) { Text("🍖") }.gaugeStyle(.accessoryLinearCapacity)
+                }
             }
         }
     }
@@ -222,7 +258,7 @@ struct PetWidget: Widget {
                 }
         }
         .configurationDisplayName("我们的宠物")
-        .description("会饿、会睡觉、会撒娇的小宠物，可以直接在桌面喂食和摸摸。")
-        .supportedFamilies([.systemSmall, .systemMedium, .accessoryCircular, .accessoryRectangular])
+        .description("会饿、会睡觉、会撒娇，还会替 TA 带话的小宠物。可以直接在桌面喂食、摸摸、玩耍。")
+        .supportedFamilies([.systemSmall, .systemMedium, .systemLarge, .accessoryCircular, .accessoryRectangular])
     }
 }

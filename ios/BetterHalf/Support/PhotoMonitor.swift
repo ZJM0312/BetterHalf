@@ -2,15 +2,31 @@ import AVFoundation
 import Photos
 import UIKit
 
+/// The two photo switches in Settings. Both are the user's choice and both are checked before any photo code runs.
+/// Photos are only ever read on this phone; nothing from the library is synced unless the user adds it to a memory.
+enum PhotoAccess {
+    static let pickerKey = "photoPickerEnabled"
+
+    /// 「允许从相册选择照片」— on by default (the system picker only hands over what the user taps).
+    static var pickerEnabled: Bool { UserDefaults.standard.object(forKey: pickerKey) as? Bool ?? true }
+
+    static func setPickerEnabled(_ on: Bool) {
+        UserDefaults.standard.set(on, forKey: pickerKey)
+        if !on { PhotoMonitor.disable() } // new-photo hints read the library too, so they go off with it
+    }
+}
+
 /// Spots photos/videos taken since the last check so the app can suggest turning them into a memory.
 /// iOS doesn't let apps watch the library in the background, so this runs whenever the app opens.
 enum PhotoMonitor {
     static let enabledKey = "newPhotoHintsEnabled"
     private static let lastCheckKey = "newPhotoLastCheck"
 
-    static var isEnabled: Bool { UserDefaults.standard.bool(forKey: enabledKey) }
+    /// 「读取最新照片并提醒记录」— off by default; needs the photo switch on and system permission.
+    static var isEnabled: Bool { PhotoAccess.pickerEnabled && UserDefaults.standard.bool(forKey: enabledKey) }
 
     static func enable() async -> Bool {
+        guard PhotoAccess.pickerEnabled else { return false }
         let status = await PHPhotoLibrary.requestAuthorization(for: .readWrite)
         let ok = status == .authorized || status == .limited
         UserDefaults.standard.set(ok, forKey: enabledKey)

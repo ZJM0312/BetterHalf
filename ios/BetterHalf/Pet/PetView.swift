@@ -25,6 +25,18 @@ struct PetView: View {
                             PetCard(pet: pet, me: s.me, partner: s.partner,
                                     onAction: { action in store.update { $0.applyPet(action, id: pet.id) } },
                                     onChat: { chatPetID = pet.id })
+                            PetWishCard(pet: pet, me: s.me, partner: s.partner) {
+                                updatePet(pet.id) { p in
+                                    p.affection += 3
+                                    p.wishClaimed = ((p.wishClaimed ?? []) + [DateKit.key()]).suffix(60).map { $0 }
+                                }
+                                UINotificationFeedbackGenerator().notificationOccurred(.success)
+                            }
+                            PetNoteCard(pet: pet, me: s.me, partner: s.partner) { text in
+                                updatePet(pet.id) { $0.note = PetNote(text: text, from: s.me) }
+                            }
+                            PetCareLogCard(pet: pet, me: s.me, partner: s.partner)
+                            PetWardrobeCard(pet: pet) { a in updatePet(pet.id) { $0.accessory = a } }
                             if pet.personality == nil { personalityHint(pet) }
                             if !tipDismissed { widgetTip }
                         } else {
@@ -69,6 +81,14 @@ struct PetView: View {
     }
 
     private struct ChatTarget: Identifiable { let id: String }
+
+    private func updatePet(_ id: String, _ body: @escaping (inout Pet) -> Void) {
+        store.update { s in
+            guard var list = s.pets, let i = list.firstIndex(where: { $0.id == id }) else { return }
+            body(&list[i])
+            s.pets = list
+        }
+    }
 
     private func picker(_ pets: [Pet], current: Pet?) -> some View {
         ScrollView(.horizontal, showsIndicators: false) {
@@ -151,14 +171,14 @@ private struct PetCard: View {
         let mood = pet.mood(at: now)
         VStack(spacing: 16) {
             ZStack {
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .fill(LinearGradient(colors: [Theme.pinkSoft, Theme.card], startPoint: .top, endPoint: .bottom))
+                PetStageBackground(date: now)
                 Ellipse().fill(.black.opacity(0.10)).frame(width: 140, height: 18).offset(y: 112)
                 PetSprite(pet: pet, sleeping: mood == .sleeping, idleMoves: true)
                     .frame(height: 210)
                     .offset(y: hop)
                     .rotationEffect(.degrees(spin))
                     .onTapGesture { perform(.pet) }
+                    .onLongPressGesture(minimumDuration: 0.5) { cuddle() }
                     .accessibilityLabel("\(pet.name)，\(mood.label)。点一下摸摸")
                     .accessibilityAddTraits(.isButton)
                 if food {
@@ -166,8 +186,8 @@ private struct PetCard: View {
                 }
                 ForEach(particles) { p in FloatingParticle(p: p) }
                 VStack {
-                    SpeechBubble(text: bubble ?? mood.line(pet: pet.name, me: me, partner: partner))
-                        .id(bubble ?? "mood-\(mood)")
+                    SpeechBubble(text: bubble ?? pet.speech(me: me, partner: partner, at: now))
+                        .id(bubble ?? pet.speech(me: me, partner: partner, at: now))
                         .transition(.scale.combined(with: .opacity))
                     Spacer()
                 }
@@ -193,8 +213,10 @@ private struct PetCard: View {
                 Spacer()
                 Text("\(mood.label) \(mood.emoji)").font(.subheadline).foregroundStyle(.secondary)
             }
-            if let p = pet.personality {
-                Text("性格：\(p)").font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading)
+            HStack(spacing: 6) {
+                Text("「\(pet.levelTitle)」").font(.caption.weight(.semibold)).foregroundStyle(Theme.pink)
+                if let p = pet.personality { Text("性格：\(p)").font(.caption).foregroundStyle(.secondary).lineLimit(1) }
+                Spacer()
             }
             VStack(spacing: 8) {
                 StatBar(icon: "🍖", title: "饱腹", value: pet.fullness(at: now), color: .orange)
@@ -258,6 +280,16 @@ private struct PetCard: View {
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { withAnimation { bubble = nil } }
     }
 
+    /// Long-press: a slow cuddle with a gentle haptic heartbeat.
+    private func cuddle() {
+        let gen = UIImpactFeedbackGenerator(style: .soft)
+        for i in 0..<4 { DispatchQueue.main.asyncAfter(deadline: .now() + Double(i) * 0.18) { gen.impactOccurred(intensity: 0.6) } }
+        onAction(.pet)
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.6)) { bubble = "蹭蹭～最喜欢你了 🥰" }
+        burst(["💞", "🥰", "💗"], count: 10)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { withAnimation { bubble = nil } }
+    }
+
     private func burst(_ emojis: [String], count: Int) {
         let new = (0..<count).map { _ in Particle(emoji: emojis.randomElement()!, dx: .random(in: -110...110), delay: .random(in: 0...0.25)) }
         particles.append(contentsOf: new)
@@ -294,6 +326,11 @@ struct PetSprite: View {
                     .saturation(sleeping ? 0.6 : 1)
                 if sleeping {
                     Text("💤").font(.title).offset(x: 10, y: -10 + sin(t * 2) * 6).opacity(0.6 + sin(t * 2) * 0.4)
+                }
+            }
+            .overlay(alignment: .top) {
+                if let a = pet.accessory {
+                    Text(a).font(.system(size: 44)).offset(y: bob + hop - 6).rotationEffect(.degrees(tilt))
                 }
             }
         }

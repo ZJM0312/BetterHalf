@@ -68,11 +68,14 @@ enum Reminders {
                 c.add(UNNotificationRequest(identifier: "\(prefix)pet.\(pet.id)", content: content,
                                             trigger: UNTimeIntervalNotificationTrigger(timeInterval: hungry.timeIntervalSinceNow, repeats: false)))
             }
-            // Daily question nudge, 21:00 every day
-            let content = UNMutableNotificationContent()
-            content.title = "今日一问已更新 💬"; content.body = "和 \(s.partner) 聊聊今天的问题吧"
-            c.add(UNNotificationRequest(identifier: "\(prefix)daily", content: content,
-                                        trigger: UNCalendarNotificationTrigger(dateMatching: DateComponents(hour: 21), repeats: true)))
+            // Daily question nudge at 21:00 — skipped for today once I've answered.
+            let todayAns = s.answers[DateKit.key()]
+            let answered = !(todayAns?.me ?? "").isEmpty
+            let day = answered ? DateKit.calendar.date(byAdding: .day, value: 1, to: Date())! : Date()
+            let partnerWaiting = !answered && !(todayAns?.partner ?? "").isEmpty
+            add(c, id: "\(prefix)daily", at: day, hour: 21,
+                title: partnerWaiting ? "\(s.partner) 的答案在宝箱里等你 🎁" : "今日一问已更新 💬",
+                body: partnerWaiting ? "回答今日一问，就能打开宝箱看看 TA 写了什么" : "和 \(s.partner) 聊聊今天的问题吧")
         }
     }
 

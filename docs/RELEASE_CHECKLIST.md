@@ -25,6 +25,10 @@
    - 几分钟后可以访问 `https://你的用户名.github.io/BetterHalf/privacy.html`
    - 仓库必须是公开的（或者用任何你有的网站托管这两个 html 文件也行）
 4. 👤 **开发者账号通过后**，在 Xcode → Signing & Capabilities 把两个 target 的 Team 换成新的付费团队（名字后面不再是 Personal Team）
+   - **打开异地同步**（免费账号不支持 iCloud 和推送，所以默认关着）：Xcode 左侧点项目 BetterHalf →（PROJECT 下的）BetterHalf → Build Settings → 搜 `BH_CLOUDKIT` → 改成 `YES`
+   - 然后在 BetterHalf target 的 Signing & Capabilities 里确认出现了 iCloud（勾选 CloudKit，容器 `iCloud.com.betterhalf.hxiz1q`）和 Push Notifications；没出现就点「+ Capability」手动加上这两项，容器名保持一致
+   - 用两个 Apple ID 的手机各装一次测试：A 在「设置 → 异地同步」邀请，B 点开链接加入，然后 B 回答今日一问，A 应该马上收到「宝箱可以开啦」通知
+   - **上架前必须做**：打开 icloud.developer.apple.com → 选容器 `iCloud.com.betterhalf.hxiz1q` → Schema → Deploy Schema Changes（把开发环境自动生成的 Snapshot / Media 记录类型部署到生产环境），否则正式版同步会失败
 5. 👤 **在 App Store Connect 创建 App**（appstoreconnect.apple.com → 我的 App → ＋）
    - 平台 iOS，名称见 `docs/appstore/listing.md`，套装 ID 选 `com.betterhalf.hxiz1q`，SKU 随便填（如 betterhalf001）
 6. **上传**（可以让我来做，或者你在 Xcode 里操作）
