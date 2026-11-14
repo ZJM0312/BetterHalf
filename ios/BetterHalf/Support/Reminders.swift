@@ -50,6 +50,24 @@ enum Reminders {
                 add(c, id: "\(prefix)milestone", at: d, hour: 9,
                     title: "我们在一起第 \(ms.day) 天啦 ✨", body: "打开 BetterHalf 生成一张纪念卡片吧")
             }
+            // No memory recorded for 3 days → gentle nudge at 20:00.
+            let latest = s.moments.map(\.date).max().map(DateKit.date) ?? DateKit.date(s.startDate)
+            let due = DateKit.calendar.date(byAdding: .day, value: 3, to: latest)!
+            let fireDay = max(due, DateKit.calendar.date(byAdding: .day, value: 1, to: DateKit.calendar.startOfDay(for: Date()))!)
+            add(c, id: "\(prefix)memory", at: fireDay, hour: 20,
+                title: "好几天没有记录回忆啦 📸", body: "最近和 \(s.partner) 有什么值得留念的瞬间吗？")
+            // Pets get hungry 8h after their last meal (skip the middle of the night).
+            for pet in s.petList {
+                let hungry = Date(timeIntervalSince1970: pet.lastFed + Pet.hungerHours * 3600)
+                let hour = DateKit.calendar.component(.hour, from: hungry)
+                guard hungry > Date(), (8..<22).contains(hour) else { continue }
+                let content = UNMutableNotificationContent()
+                content.title = "\(pet.species) \(pet.name)饿了"
+                content.body = "快去喂喂 TA 吧，桌面小组件上也能直接喂食"
+                content.sound = .default
+                c.add(UNNotificationRequest(identifier: "\(prefix)pet.\(pet.id)", content: content,
+                                            trigger: UNTimeIntervalNotificationTrigger(timeInterval: hungry.timeIntervalSinceNow, repeats: false)))
+            }
             // Daily question nudge, 21:00 every day
             let content = UNMutableNotificationContent()
             content.title = "今日一问已更新 💬"; content.body = "和 \(s.partner) 聊聊今天的问题吧"

@@ -5,7 +5,7 @@ struct BucketView: View {
     @State private var text = ""
 
     var body: some View {
-        NavigationStack {
+        Group {
             if let s = store.state {
                 let done = s.bucket.filter(\.done).count
                 let items = s.bucket.sorted { !$0.done && $1.done }
@@ -65,7 +65,6 @@ struct BucketView: View {
                     .animation(.default, value: s.bucket)
                 }
                 .screenBackground()
-                .navigationTitle("情侣清单")
             }
         }
     }

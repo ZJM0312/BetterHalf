@@ -9,7 +9,7 @@ struct DecideView: View {
     @State private var result: String?
 
     var body: some View {
-        NavigationStack {
+        Group {
             if let s = store.state {
                 let list = s.decisions.first { $0.id == activeID } ?? s.decisions.first
                 ScrollView {
@@ -20,7 +20,6 @@ struct DecideView: View {
                     .padding(16)
                 }
                 .screenBackground()
-                .navigationTitle("帮我选")
             }
         }
     }

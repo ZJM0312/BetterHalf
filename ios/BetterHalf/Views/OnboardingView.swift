@@ -8,6 +8,7 @@ struct OnboardingView: View {
     @State private var start = Date()
     @State private var error: String?
     @State private var importing = false
+    @State private var joining = false
 
     private let features: [(String, String, String)] = [
         ("💞", "在一起天数", "纪念日自动倒数，提前一天提醒你"),
@@ -38,8 +39,12 @@ struct OnboardingView: View {
                         .font(.subheadline).foregroundStyle(.secondary)
                     if let error { Text(error).font(.footnote).foregroundStyle(.red) }
                     Button("开启我们的空间 →", action: create).buttonStyle(PrimaryButtonStyle())
-                    Button("已有备份？导入数据") { importing = true }
-                        .font(.footnote).frame(maxWidth: .infinity)
+                    HStack {
+                        Button("TA 已经在用？靠近加入") { joining = true }
+                        Spacer()
+                        Button("导入备份") { importing = true }
+                    }
+                    .font(.footnote)
                 }
                 .card()
 
@@ -61,6 +66,11 @@ struct OnboardingView: View {
         }
         .screenBackground()
         .scrollDismissesKeyboard(.interactively)
+        #if DEBUG
+        // UI-test hook: `-BHOpenSync` opens the join sheet on launch.
+        .onAppear { if ProcessInfo.processInfo.arguments.contains("-BHOpenSync") { joining = true } }
+        #endif
+        .sheet(isPresented: $joining) { SyncView(joinName: me.trimmingCharacters(in: .whitespaces).isEmpty ? nil : me) }
         .fileImporter(isPresented: $importing, allowedContentTypes: [.json]) { result in
             guard case .success(let url) = result else { return }
             let ok = url.startAccessingSecurityScopedResource()

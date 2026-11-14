@@ -2,8 +2,11 @@ import SwiftUI
 
 struct TogetherView: View {
     @Environment(SpaceStore.self) private var store
+    @Environment(AppRouter.self) private var router
     @State private var showAdd = false
     @State private var showSettings = false
+    @State private var showSync = false
+    @AppStorage("coupleWidgetTipDismissed") private var widgetTipDismissed = false
     @State private var poster: UIImage?
 
     var body: some View {
@@ -11,8 +14,11 @@ struct TogetherView: View {
             if let s = store.state {
                 ScrollView {
                     VStack(spacing: 14) {
+                        greeting(s)
                         hero(s)
+                        todayCard(s)
                         anniversaries(s)
+                        if !widgetTipDismissed { widgetTip }
                     }
                     .padding(16)
                 }
@@ -20,6 +26,10 @@ struct TogetherView: View {
                 .navigationTitle("BetterHalf")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button { showSync = true } label: { Image(systemName: "arrow.triangle.2.circlepath.circle") }
+                            .accessibilityLabel("和 TA 的手机同步")
+                    }
                     ToolbarItem(placement: .topBarTrailing) {
                         Button { showSettings = true } label: { Image(systemName: "gearshape") }
                             .accessibilityLabel("设置")
@@ -27,6 +37,7 @@ struct TogetherView: View {
                 }
                 .sheet(isPresented: $showAdd) { AddAnniversarySheet() }
                 .sheet(isPresented: $showSettings) { SettingsView() }
+                .sheet(isPresented: $showSync) { SyncView() }
                 .sheet(item: Binding(get: { poster.map(IdentifiedImage.init) }, set: { poster = $0?.image })) { item in
                     PosterSheet(image: item.image, days: store.daysTogether)
                 }
@@ -105,6 +116,105 @@ struct TogetherView: View {
             Text("长按可删除").font(.caption2).foregroundStyle(.tertiary).padding(.top, 6)
         }
         .card()
+    }
+}
+
+extension TogetherView {
+    func greeting(_ s: SpaceState) -> some View {
+        let hour = Calendar.current.component(.hour, from: Date())
+        let (hello, emoji): (String, String) = switch hour {
+        case 5..<11: ("早上好", "☀️")
+        case 11..<13: ("中午好", "🍱")
+        case 13..<18: ("下午好", "☕️")
+        case 18..<23: ("晚上好", "🌙")
+        default: ("夜深了，早点休息", "💤")
+        }
+        return HStack {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("\(hello)，\(s.me) \(emoji)").font(.title3.bold())
+                Text(DateKit.calendar.isDate(Date(), equalTo: DateKit.date(s.startDate), toGranularity: .day) ? "今天是你们在一起的第一天 💕" : "今天也要好好爱 \(s.partner) 哦")
+                    .font(.subheadline).foregroundStyle(.secondary)
+            }
+            Spacer()
+        }
+        .padding(.horizontal, 4)
+    }
+
+    /// Small, actionable reminders for today. Each row jumps to the relevant tab.
+    func todayCard(_ s: SpaceState) -> some View {
+        let items = todayItems(s)
+        return VStack(alignment: .leading, spacing: 4) {
+            SectionTitle(text: "今天").padding(.bottom, 4)
+            ForEach(items, id: \.text) { item in
+                Button {
+                    if let tab = item.tab { router.tab = tab }
+                } label: {
+                    HStack(spacing: 10) {
+                        Text(item.emoji).font(.title3).frame(width: 30)
+                        Text(item.text).font(.subheadline).foregroundStyle(.primary).multilineTextAlignment(.leading)
+                        Spacer()
+                        if item.tab != nil { Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary) }
+                    }
+                    .padding(.vertical, 8)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .disabled(item.tab == nil)
+            }
+        }
+        .card()
+    }
+
+    private struct TodayItem { let emoji: String; let text: String; let tab: AppTab? }
+
+    private func todayItems(_ s: SpaceState) -> [TodayItem] {
+        var out: [TodayItem] = []
+        let today = DateKit.key()
+        let ans = s.answers[today] ?? Answer()
+        if ans.bothAnswered {
+            out.append(TodayItem(emoji: "✅", text: "今日一问你们都答完啦，去看看彼此的回答", tab: .talk))
+        } else if ans.me != nil {
+            out.append(TodayItem(emoji: "💬", text: "你答完了，等 \(s.partner) 回答今日一问", tab: .talk))
+        } else {
+            out.append(TodayItem(emoji: "💬", text: "今日一问还没回答：\(Catalog.question(for: today))", tab: .talk))
+        }
+        if let pet = s.petList.first {
+            switch pet.mood() {
+            case .hungry: out.append(TodayItem(emoji: "🍖", text: "\(pet.name)饿了，去喂喂 TA", tab: .pet))
+            case .lonely: out.append(TodayItem(emoji: "🥺", text: "\(pet.name)想你们了，去陪 TA 聊聊天", tab: .pet))
+            case .sleeping: out.append(TodayItem(emoji: "💤", text: "\(pet.name)睡着了，明天再一起玩", tab: .pet))
+            case .happy: out.append(TodayItem(emoji: pet.species, text: "\(pet.name)今天心情不错", tab: .pet))
+            }
+        } else {
+            out.append(TodayItem(emoji: "🐾", text: "添加你们的宠物，让 TA 陪你们", tab: .pet))
+        }
+        let all = s.anniversaries + [Anniversary(id: "_start", name: "在一起纪念日", date: s.startDate, yearly: true)]
+        if let next = all.compactMap({ a in DateKit.daysUntil(a, today: today).map { (a, $0) } }).min(by: { $0.1 < $1.1 }), next.1 <= 30 {
+            out.append(TodayItem(emoji: next.1 == 0 ? "🎉" : "🎁",
+                                 text: next.1 == 0 ? "今天就是\(next.0.name)！记得说一句我爱你" : "\(next.1) 天后是\(next.0.name)，可以开始准备惊喜了",
+                                 tab: nil))
+        }
+        let latest = s.moments.map(\.date).max()
+        let gap = latest.map { DateKit.daysBetween($0, today) } ?? 99
+        if gap >= 3 {
+            out.append(TodayItem(emoji: "📸", text: latest == nil ? "记录你们的第一条回忆吧" : "已经 \(gap) 天没记录回忆了", tab: .memories))
+        }
+        return out
+    }
+
+    var widgetTip: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Text("📱").font(.title2)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("把天数放到桌面和锁屏").font(.subheadline.bold())
+                Text("长按桌面空白处 → 左上角「编辑」→「添加小组件」→ 搜索 BetterHalf。长按小组件 →「编辑小组件」可以选择显示在一起天数、里程碑或某个纪念日。")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 0)
+            Button { widgetTipDismissed = true } label: { Image(systemName: "xmark").font(.caption).foregroundStyle(.secondary) }
+                .accessibilityLabel("不再提示")
+        }
+        .card(Theme.pinkSoft)
     }
 }
 
