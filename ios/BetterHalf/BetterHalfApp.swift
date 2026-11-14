@@ -117,20 +117,40 @@ struct RootView: View {
     @Environment(SpaceStore.self) private var store
     @Environment(AppLock.self) private var lock
     @Environment(\.scenePhase) private var scenePhase
+    @State private var showSplash = RootView.splashOnLaunch
+    @State private var contentRevealed = !RootView.splashOnLaunch
+
+    /// Screenshots / UI automation skip the entry animation.
+    private static var splashOnLaunch: Bool {
+        let args = ProcessInfo.processInfo.arguments
+        return !args.contains("-BHNoSplash") && !args.contains("-BHTab")
+    }
 
     var body: some View {
         ZStack {
-            if store.state == nil {
-                OnboardingView()
-            } else {
-                MainTabView()
+            Group {
+                if store.state == nil {
+                    OnboardingView()
+                } else {
+                    MainTabView()
+                }
             }
+            // The app gently settles into place as the splash dissolves.
+            .scaleEffect(contentRevealed ? 1 : 0.94)
+            .opacity(contentRevealed ? 1 : 0)
             NudgeOverlay()
             if lock.isEnabled && lock.isLocked && store.state != nil {
                 LockScreen().transition(.opacity)
             } else if lock.isEnabled && scenePhase != .active {
                 // Hide content in the app switcher.
                 Theme.gradient.ignoresSafeArea().overlay(Image(systemName: "heart.fill").font(.largeTitle).foregroundStyle(.white))
+            }
+            if showSplash {
+                SplashView(state: store.state, onLeaving: {
+                    // The app settles in underneath while the splash dissolves.
+                    withAnimation(.spring(response: 0.6, dampingFraction: 0.85)) { contentRevealed = true }
+                }, onFinish: { showSplash = false })
+                .zIndex(10)
             }
         }
         .animation(.easeInOut(duration: 0.2), value: lock.isLocked)

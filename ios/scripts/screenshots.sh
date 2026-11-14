@@ -60,7 +60,7 @@ PY
 mkdir -p "$OUT"
 shoot() { # tab filename
   xcrun simctl terminate "$UDID" "$BUNDLE" 2>/dev/null || true
-  xcrun simctl launch "$UDID" "$BUNDLE" -BHTab "$1" >/dev/null
+  xcrun simctl launch "$UDID" "$BUNDLE" -BHTab "$1" -BHNoSplash >/dev/null
   sleep 4
   xcrun simctl io "$UDID" screenshot "$OUT/$2.png" >/dev/null
   echo "  ✓ $2.png"
